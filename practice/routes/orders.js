@@ -5,7 +5,8 @@ const { authenticateToken, requireAdmin } = require("../middlewares/auth");
 
 const router = express.Router();
 
-// สถานะถัดไปที่อนุญาต
+// สถานะถัดไปที่อนุญาต เช่น pending เปลี่ยนเป็น preparing หรือ cancelled ได้
+// [] คือสถานะจบแล้ว เปลี่ยนต่อไม่ได้
 const NEXT_STATUS = {
   pending: ["preparing", "cancelled"],
   preparing: ["delivered", "cancelled"],
@@ -34,6 +35,7 @@ router.post("/", authenticateToken, async (req, res, next) => {
   // transaction ต้องใช้ connection เส้นเดียว จึงขอจาก pool มาถือไว้
   const conn = await pool.getConnection();
   try {
+    // เริ่ม transaction: ทุกคำสั่งหลังจากนี้จะสำเร็จพร้อมกัน หรือยกเลิกพร้อมกัน
     await conn.beginTransaction();
 
     // ตรวจเมนูทีละรายการ และรวมราคาจากฐานข้อมูล ไม่เชื่อราคาจาก client
@@ -44,7 +46,7 @@ router.post("/", authenticateToken, async (req, res, next) => {
         [item.menuItemId],
       );
 
-      // ไม่พบเมนู ตอบ 404
+      // ไม่พบเมนู ตอบ 404 โดย rollback คือยกเลิก transaction
       if (rows.length === 0) {
         await conn.rollback();
         return res.status(404).json({
@@ -67,8 +69,10 @@ router.post("/", authenticateToken, async (req, res, next) => {
       "INSERT INTO orders (customer_name) VALUES (?)",
       [req.user.name],
     );
+    // insertId คือ id ของออเดอร์ที่เพิ่งสร้าง
     const orderId = result.insertId;
 
+    // เพิ่มรายการอาหารของออเดอร์นี้ทีละแถว
     for (const item of items) {
       await conn.query(
         "INSERT INTO order_items (order_id, menu_item_id, quantity) VALUES (?, ?, ?)",
@@ -79,6 +83,7 @@ router.post("/", authenticateToken, async (req, res, next) => {
     // commit = ยืนยันทั้งหมดลงฐานข้อมูล
     await conn.commit();
 
+    // 201 Created = สร้างข้อมูลใหม่สำเร็จ
     res.status(201).json({
       data: { id: orderId, customerName: req.user.name, status: "pending", total },
     });
@@ -99,6 +104,7 @@ router.get("/:id", authenticateToken, async (req, res, next) => {
       req.params.id,
     ]);
 
+    // query คืน array เสมอ ถ้าไม่พบจะเป็น array ว่าง ไม่ใช่ error
     if (orders.length === 0) {
       return res.status(404).json({
         error: { code: "ORDER_NOT_FOUND", message: "ไม่พบออเดอร์นี้" },
@@ -114,7 +120,8 @@ router.get("/:id", authenticateToken, async (req, res, next) => {
       });
     }
 
-    // JOIN เพื่อเอาชื่อและราคาเมนูมาด้วย
+    // JOIN เชื่อม order_items กับ menu_items เพื่อเอาชื่อและราคาเมนูมาด้วย
+    // oi และ m คือชื่อย่อของตาราง
     const [items] = await pool.query(
       `SELECT m.name, m.price, oi.quantity
        FROM order_items oi
@@ -147,6 +154,7 @@ router.patch("/:id/status", authenticateToken, requireAdmin, async (req, res, ne
   try {
     const newStatus = req.body.status;
 
+    // Object.keys ดึงชื่อสถานะทั้งหมดจาก NEXT_STATUS
     // ค่าที่ระบบไม่รู้จัก ตอบ 400
     if (!Object.keys(NEXT_STATUS).includes(newStatus)) {
       return res.status(400).json({

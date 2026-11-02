@@ -5,7 +5,9 @@ const { pool } = require("../../db");
 const router = express.Router();
 
 // GET /api/v1/menu?page=1&limit=10&available=true
+// async เพราะต้องรอฐานข้อมูล
 router.get("/", async (req, res, next) => {
+  // Express 4 ไม่จับ error ของ async ให้เอง จึงใช้ try/catch แล้วส่งต่อด้วย next(err)
   try {
     // ค่าใน URL เป็น string จึงแปลงเป็นตัวเลข ถ้าไม่ส่งมาใช้ค่าเริ่มต้น
     const page = Number(req.query.page || 1);
@@ -29,13 +31,15 @@ router.get("/", async (req, res, next) => {
     }
 
     // นับทั้งหมด เพื่อคำนวณจำนวนหน้า
+    // pool.query คืน [แถวข้อมูล, ข้อมูลคอลัมน์] จึงใช้ [countRows] ดึงเฉพาะแถวข้อมูล
     const [countRows] = await pool.query(
       `SELECT COUNT(*) AS total FROM menu_items ${where}`,
       params,
     );
     const totalItems = countRows[0].total;
 
-    // OFFSET คือจำนวนแถวที่ข้าม
+    // LIMIT คือเอากี่แถว, OFFSET คือข้ามกี่แถว
+    // เช่น page 2, limit 5 จะข้าม 5 แถวแรก
     const offset = (page - 1) * limit;
     const [rows] = await pool.query(
       `SELECT id, name, price, available FROM menu_items ${where}
@@ -49,6 +53,7 @@ router.get("/", async (req, res, next) => {
         page,
         limit,
         totalItems,
+        // Math.ceil ปัดขึ้น เช่น 22 รายการ หน้าละ 5 ได้ 5 หน้า
         totalPages: Math.ceil(totalItems / limit),
       },
     });

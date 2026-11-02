@@ -13,10 +13,12 @@ function authenticateToken(req, res, next) {
     });
   }
 
+  // แยกคำว่า Bearer ออก เหลือเฉพาะตัว token
   const token = header.split(" ")[1];
 
-  // jwt.verify โยน error ถ้า token ผิดหรือหมดอายุ
+  // jwt.verify โยน error ถ้า token ผิดหรือหมดอายุ จึงต้องครอบด้วย try/catch
   try {
+    // เก็บข้อมูลใน token ไว้ที่ req.user ให้ขั้นถัดไปรู้ว่าใครเรียก
     req.user = jwt.verify(token, jwtSecret);
     next();
   } catch (err) {

@@ -11,6 +11,7 @@ const app = express();
 app.use(express.json());
 
 // ติดตั้ง route ใต้ path หลัก
+// เช่น router.post("/login") ใน authRoutes จะกลายเป็น POST /api/v1/auth/login
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/menu", menuRoutes);
 app.use("/api/v1/orders", orderRoutes);
@@ -30,6 +31,7 @@ app.use((err, req, res, next) => {
       error: { code: "INVALID_JSON", message: "รูปแบบ JSON ไม่ถูกต้อง" },
     });
   }
+  // error อื่นเป็นปัญหาฝั่ง server เก็บรายละเอียดใน log แต่ไม่ส่งให้ client เห็น
   console.error(err);
   res.status(500).json({
     error: { code: "INTERNAL_ERROR", message: "เกิดข้อผิดพลาดในระบบ" },
